@@ -1,0 +1,377 @@
+**** PROPERTIES SKAFFOLDER ****
+{
+    "forEachObj": "resource",
+    "overwrite": true,
+    "_partials": []
+}
+**** END PROPERTIES SKAFFOLDER ****
+package com.{{#lowercase project.name}}{{/lowercase}}.db.{{#lowercase db.name}}{{/lowercase}}.service.base;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import javax.sql.DataSource;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.BeanPropertyRowMapper;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.jdbc.core.namedparam.SqlParameterSource;
+import org.springframework.jdbc.core.simple.SimpleJdbcInsert;
+import org.springframework.stereotype.Service;
+{{#equal resource.name 'User'}}
+import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.security.core.context.SecurityContextHolder;
+import com.{{lowercase project.name}}.db.{{lowercase db.name}}.service.RolesService;
+{{/equal}}
+
+import com.{{lowercase project.name}}.db.{{lowercase db.name}}.entity.{{capitalize resource._entity.name}};
+import com.{{lowercase project.name}}.db.{{lowercase db.name}}.service.{{capitalize resource._entity.name}}Service;
+
+//IMPORT RELATIONS
+{{#each resource._entity._relations}}
+import com.{{#lowercase ../project.name}}{{/lowercase}}.db.{{#lowercase ../db.name}}{{/lowercase}}.entity.{{#capitalize _ent2.name}}{{/capitalize}};
+{{/each}}
+
+@Service
+public class {{#capitalize resource.name}}{{/capitalize}}BaseService {
+
+	private static NamedParameterJdbcTemplate jdbcTemplate;
+	
+		@Autowired
+	public void setDataSource(DataSource dataSource) {
+		jdbcTemplate = new NamedParameterJdbcTemplate(dataSource);
+	}
+	
+	{{#equal resource.name 'User'}}
+	private static RolesService rolesService = new RolesService();
+	{{/equal}}
+
+
+{{#notNull resource._entity}}
+    //CRUD METHODS
+    
+    {{#each resource._services}}
+    	{{#equal crudAction 'list'}}
+    	
+    //CRUD - GET LIST
+    	
+	public List<{{#capitalize ../resource._entity.name}}{{/capitalize}}> getList() {
+	    
+		String sql = "select * from `{{../resource._entity.name}}`";
+		
+	    SqlParameterSource parameters = new MapSqlParameterSource();
+	    {{#notEqual ../resource.name 'User'}}
+	    return jdbcTemplate.query(sql, parameters, new BeanPropertyRowMapper({{capitalize ../resource._entity.name}}.class));
+	    {{/notEqual}}
+	    {{#equal ../resource.name 'User'}}
+	    List<User> list = jdbcTemplate.query(sql, parameters, new BeanPropertyRowMapper(User.class));
+	    
+	    for (User user : list) {
+			user = this.addRoles(user);
+		}
+	    
+	    return list;
+	    {{/equal}}
+	    
+	    
+	}
+
+    	{{/equal}}
+    	{{#equal crudAction 'get'}}
+//CRUD - GET ONE
+    	
+	public {{#capitalize ../resource._entity.name}}{{/capitalize}} get(Long id) {
+	    
+		String sql = "select * from `{{../resource._entity.name}}` where `_id` = :id";
+		
+	    SqlParameterSource parameters = new MapSqlParameterSource()
+			.addValue("id", id);
+	    
+	    return ({{capitalize ../resource._entity.name}}) jdbcTemplate.queryForObject(sql, parameters, new BeanPropertyRowMapper({{capitalize ../resource._entity.name}}.class));
+	}
+
+
+    	{{/equal}}
+    	{{#equal crudAction 'update'}}
+//CRUD - EDIT
+    	
+	public {{#capitalize ../resource._entity.name}}{{/capitalize}} update({{#capitalize ../resource._entity.name}}{{/capitalize}} obj, Long id) {
+
+		{{#notEqual ../resource._entity.name 'User'}}
+		String sql = "UPDATE `{{../resource._entity.name}}` SET {{#each ../resource._entity._attrs}}`{{name}}` = :{{name}}{{#isNotLast ../../resource._entity._attrs @index}},{{/isNotLast}}{{/each}} {{#each ../resource._entity._relations}}{{#equal type "1:m"}}{{#equal _ent1.name ../../resource._entity.name}}, `{{name}}` = :{{name}} {{/equal}}{{/equal}}{{/each}} WHERE `_id`=:id";
+		SqlParameterSource parameters = new MapSqlParameterSource()
+			.addValue("id", id){{#each ../resource._entity._attrs}}
+			.addValue("{{name}}", obj.get{{capitalize name}}()){{/each}}{{#each ../resource._entity._relations}}{{#equal type "1:m"}}{{#equal _ent1.name ../../resource._entity.name}}
+			.addValue("{{name}}", obj.get{{capitalize name}}()){{/equal}}{{/equal}}{{/each}};
+		{{/notEqual}}
+		{{#equal ../resource._entity.name 'User'}}
+		String sql = "UPDATE `{{../resource._entity.name}}` SET {{#each ../resource._entity._attrs}}{{#notEqual name 'username'}}{{#notEqual name 'password'}}{{#notEqual name 'roles'}}`{{name}}`{{#isNotLastUser ../../resource._entity._attrs @index}},{{/isNotLastUser}}{{/notEqual}}{{/notEqual}}{{/notEqual}}{{/each}} WHERE `_id`=:id";
+		SqlParameterSource parameters = new MapSqlParameterSource()
+		    .addValue("id", obj.get_id()){{#each ../resource._entity._attrs}}{{#notEqual name 'roles'}}{{#notEqual name 'username'}}{{#notEqual name 'password'}}
+			.addValue("{{name}}", obj.get{{#capitalize name}}{{/capitalize}}()){{/notEqual}}{{/notEqual}}{{/notEqual}}{{/each}}{{#each ../resource._entity._relations}}{{#equal type "1:m"}}{{#equal _ent1.name ../../resource._entity.name}}
+			.addValue("{{name}}", obj.get{{capitalize name}}()){{/equal}}{{/equal}}{{/each}};
+		{{/equal}}
+		jdbcTemplate.update(sql, parameters);
+	    return obj;
+	}
+	
+    	{{/equal}}
+    	{{#equal crudAction 'delete'}}
+//CRUD - REMOVE
+    
+	public void delete(Long id) {
+		String sql = "DELETE FROM `{{../resource._entity.name}}` WHERE `_id`=:id";
+		SqlParameterSource parameters = new MapSqlParameterSource()
+			.addValue("id", id);
+		
+		{{#each ../resource._entity._relations}}
+		{{#equal type "m:m"}}
+		String sql_{{lowercase name}} = "DELETE FROM `{{lowercase _ent1.name}}_{{lowercase name}}` WHERE `id_{{#equal _ent1.name ../../resource._entity.name}}{{_ent1.name}}`{{/equal}}{{#equal _ent2.name ../../resource._entity.name}}{{_ent2.name}}`{{/equal}}= :id";
+		jdbcTemplate.update(sql_{{lowercase name}}, parameters);
+		{{/equal}}
+		{{/each}}
+		jdbcTemplate.update(sql, parameters);
+	}
+
+    	{{/equal}}
+    	{{#equal crudAction 'create'}}
+    //CRUD - CREATE
+    	
+	public {{#capitalize ../resource._entity.name}}{{/capitalize}} insert({{#capitalize ../resource._entity.name}}{{/capitalize}} obj) {
+		Long id = jdbcTemplate.queryForObject("select max(_id) from `{{lowercase ../resource._entity.name}}`", new MapSqlParameterSource(), Long.class);
+		obj.set_id(id == null ? 1 : id + 1);
+		{{#notEqual ../resource._entity.name 'User'}}
+		String sql = "INSERT INTO `{{lowercase ../resource._entity.name}}` (`_id`, {{#each ../resource._entity._attrs}}`{{name}}`{{#isNotLast ../../resource._entity._attrs @index}},{{/isNotLast}}{{/each}}{{#each ../resource._entity._relations}}{{#equal type "1:m"}}{{#equal _ent1.name ../../resource._entity.name}},`{{name}}`{{/equal}}{{/equal}}{{/each}}) VALUES (:id,{{#each ../resource._entity._attrs}}:{{name}}{{#isNotLast ../../resource._entity._attrs @index}},{{/isNotLast}}{{/each}}{{#each ../resource._entity._relations}}{{#equal type "1:m"}}{{#equal _ent1.name ../../resource._entity.name}}, :{{name}} {{/equal}}{{/equal}}{{/each}})";
+			SqlParameterSource parameters = new MapSqlParameterSource()
+		    .addValue("id", obj.get_id()){{#each ../resource._entity._attrs}}
+			.addValue("{{name}}", obj.get{{#capitalize name}}{{/capitalize}}()){{/each}}{{#each ../resource._entity._relations}}{{#equal type "1:m"}}{{#equal _ent1.name ../../resource._entity.name}}
+			.addValue("{{name}}", obj.get{{capitalize name}}()){{/equal}}{{/equal}}{{/each}};
+		
+		jdbcTemplate.update(sql, parameters);
+		{{/notEqual}}
+		{{#equal ../resource._entity.name 'User'}}
+		String sql = "INSERT INTO `user` (`_id`, `username`, `password`, {{#each ../resource._entity._attrs}}{{#notEqual name 'username'}}{{#notEqual name 'password'}}{{#notEqual name 'roles'}}`{{name}}`{{#isNotLastUser ../../resource._entity._attrs @index}},{{/isNotLastUser}}{{/notEqual}}{{/notEqual}}{{/notEqual}}{{/each}} )	VALUES (:id, :username , :password, {{#each ../resource._entity._attrs}}{{#notEqual name 'username'}}{{#notEqual name 'password'}}{{#notEqual name 'roles'}}:{{name}}{{#isNotLastUser ../../resource._entity._attrs @index}},{{/isNotLastUser}}{{/notEqual}}{{/notEqual}}{{/notEqual}}{{/each}} )";
+		SqlParameterSource parameters = new MapSqlParameterSource()
+		    .addValue("id", obj.get_id()){{#each ../resource._entity._attrs}}{{#notEqual name 'roles'}}
+			.addValue("{{name}}", obj.get{{#capitalize name}}{{/capitalize}}()){{/notEqual}}{{/each}}{{#each ../resource._entity._relations}}{{#equal type "1:m"}}{{#equal _ent1.name ../../resource._entity.name}}
+			.addValue("{{name}}", obj.get{{capitalize name}}()){{/equal}}{{/equal}}{{/each}};
+
+		jdbcTemplate.update(sql, parameters);
+		this.updateRoles(obj.get_id(), obj.getRoles());
+		{{/equal}}
+		return obj;
+	}
+	
+    	{{/equal}}
+    	{{#startWith crudAction 'findBy'}}
+//CRUD - FIND BY {{#subStrCap name 6 }}{{/subStrCap}}
+    	
+	public List<{{#capitalize ../resource._entity.name}}{{/capitalize}}> findBy{{#subStr name 6 }}{{/subStr}}(Long id{{#subStr name 6 }}{{/subStr}}) {
+		
+        {{#isMtoM name ../resource._relations ../resource.name}}
+        String sql = "select * from `{{capitalize ../resource._entity.name}}` WHERE `_id` IN (SELECT `id_{{relations._ent1.name}}` FROM `{{relations._ent1.name}}_{{relations.name}}` WHERE `id_{{relations._ent2.name}}` = :id{{#subStr name 6 }}{{/subStr}})";
+		{{else}}
+		String sql = "select * from `{{capitalize ../resource._entity.name}}` WHERE `{{#subStr name 6 }}{{/subStr}}` = :id{{#subStr name 6 }}{{/subStr}}";
+		{{/isMtoM}}
+		
+	    SqlParameterSource parameters = new MapSqlParameterSource()
+		.addValue("id{{#subStr name 6 }}{{/subStr}}", id{{#subStr name 6 }}{{/subStr}});
+	    
+	    return jdbcTemplate.query(sql, parameters, new BeanPropertyRowMapper({{capitalize ../resource._entity.name}}.class));
+	}
+    	{{/startWith}}
+    	{{#equal crudAction 'findBy'}}
+    //CRUD - FIND BY ALL
+    	
+    	{{/equal}}
+    	{{#startWith crudAction 'get'}}
+    
+    //CRUD - GET RELATION {{subStrCap name 3 }}
+    public List<ObjectId> get{{subStrCap name 3 }}(String id) {
+    	{{capitalize ../resource._entity.name}} {{lowercase ../resource._entity.name}} = datastore.find({{capitalize ../resource._entity.name}}.class).field("_id").equal(new ObjectId(id)).get();
+    	return {{lowercase ../resource._entity.name}}.get{{subStrCap name 3 }}();
+    }
+    	{{/startWith}}
+    	{{#startWith crudAction 'addTo'}}
+    //CRUD - ADD RELATION IN {{#subStr name 5 }}{{/subStr}}
+    	
+    	{{/startWith}}
+    	{{#startWith crudAction 'removeFrom'}}
+    //CRUD - REMOVE RELATION IN {{#subStr name 10 }}{{/subStr}}
+    	
+    	{{/startWith}}
+    	{{#startWith crudAction 'linkTo'}}
+    //CRUD - LINK TO {{#subStr name 6 }}{{/subStr}}
+    	
+    	{{/startWith}}
+    	{{#startWith crudAction 'unlinkFrom'}}
+    //CRUD - UNLINK FROM {{#subStr name 10 }}{{/subStr}}
+    	
+    	{{/startWith}}
+    	{{#startWith crudAction 'strictLinkListOf'}}{{/startWith}}
+    {{/each}}{{/notNull}}
+    
+    {{#each resource._relations}}
+    
+    {{#equal type "m:m"}}{{#equal _ent1.name ../resource/name}}
+    // External relation m:m {{name}}
+    public static class {{capitalize ../resource.name}}_{{name}}Service {
+
+    	public static ArrayList<Long> findBy_{{_ent1.name}}(Long id_{{_ent1.name}}) {
+    		String sql = "select `id_{{_ent2.name}}` from {{_ent1.name}}_{{name}} WHERE `id_{{_ent1.name}}`=:id_{{_ent1.name}}";
+    		SqlParameterSource parameters = new MapSqlParameterSource()
+    			.addValue("id_{{_ent1.name}}", id_{{_ent1.name}});
+    	    
+    	    List<Long> listId = jdbcTemplate.queryForList(sql, parameters, Long.class);
+    		return (ArrayList<Long>) listId;
+    	}
+    	
+
+    	public static void updateRelation(Long id_{{_ent1.name}}, ArrayList<Long> {{name}}) {
+
+    		// Delete not in array
+    		String in = " and `id_{{_ent2.name}}` NOT IN (:{{name}})";
+    		String sql = "DELETE FROM {{_ent1.name}}_{{name}} WHERE `id_{{_ent1.name}}`=:id_{{_ent1.name}} ";
+    		
+    		if ({{name}} != null && {{name}}.size() > 0)
+    			sql = sql + in;
+    			
+    		SqlParameterSource parameters = new MapSqlParameterSource()
+    			.addValue("id_{{_ent1.name}}", id_{{_ent1.name}})
+    			.addValue("{{name}}", {{name}});
+    		
+    		jdbcTemplate.update(sql, parameters);
+    		
+    		// Get actual    		
+    	    List<Long> actual = {{capitalize ../resource.name}}Service.{{capitalize ../resource.name}}_{{name}}Service.findBy_{{_ent1.name}}(id_{{_ent1.name}});
+    	    
+    		// Insert new
+    		for (Long id_{{_ent2.name}} : {{name}}) {
+    			if (actual.indexOf(id_{{_ent2.name}}) == -1){
+    				{{capitalize ../resource.name}}Service.{{capitalize ../resource.name}}_{{name}}Service.insert(id_{{_ent1.name}}, id_{{_ent2.name}});
+    			}
+    		}
+    		
+    	}
+    	
+
+    	public static void insert(Long id_{{_ent1.name}}, Long id_{{_ent2.name}}) {
+    		{{capitalize ../resource.name}}.{{capitalize ../resource.name}}_{{name}} obj = new {{capitalize ../resource.name}}.{{capitalize ../resource.name}}_{{name}}();
+			Long id = jdbcTemplate.queryForObject("select max(_id) FROM {{_ent1.name}}_{{name}}", new MapSqlParameterSource(), Long.class);
+			obj.set_id(id == null ? 1 : id + 1);
+			
+			String sql = "INSERT INTO {{_ent1.name}}_{{name}} (`_id`, `id_{{_ent1.name}}`, `id_{{_ent2.name}}` )	VALUES (:id, :id_{{_ent1.name}}, :id_{{_ent2.name}})";
+
+			MapSqlParameterSource parameters = new MapSqlParameterSource()
+				.addValue("id", obj.get_id())
+				.addValue("id_{{_ent1.name}}", id_{{_ent1.name}})
+				.addValue("id_{{_ent2.name}}", id_{{_ent2.name}});
+
+			jdbcTemplate.update(sql, parameters);
+    	}
+
+    }
+	{{/equal}}{{/equal}}{{/each}}
+
+    
+    /*
+     * CUSTOM SERVICES
+     * 
+     *	These services will be overwritten and implemented in {{resource.name}}Service.java
+     */
+    
+    {{#each resource._services}}
+    {{#equal crudAction null}}
+    
+    /*
+    
+    YOU CAN COPY AND MODIFY THIS METHOD IN {{capitalize ../resource.name}}Service.java
+    
+    Name: {{name}}
+    Description: {{description}}
+    Params: {{#each _params}}
+    	{{type}} {{name}} - {{description}}{{/each}}
+    */
+	public Object {{name}} () {
+		
+        return null;
+        
+	}
+	
+	
+    	{{/equal}}
+    {{/each}}
+    {{#equal resource.name 'User'}}
+    	public User login(String username, String password) {
+		String sql = "select * from `user` where `username` = :username AND  `password` = :password";
+		
+	    SqlParameterSource parameters = new MapSqlParameterSource()
+		.addValue("username", username)
+		.addValue("password", password);
+	    
+	    try {
+		    User user = (User) jdbcTemplate.queryForObject(sql, parameters, new BeanPropertyRowMapper(User.class));
+		    user = this.addRoles(user);
+		    return user;
+	    } catch(EmptyResultDataAccessException e){
+	    	return null;
+	    }
+	}
+		public boolean changePassword(Long id_user, Map<String, String> params) throws Exception {
+		
+		//AuthenticationService auth =(AuthenticationService) SecurityContextHolder.getContext().getAuthentication();
+
+		String usernameAdmin = SecurityContextHolder.getContext().getAuthentication().getName();
+		String passwordAdmin = params.get("passwordAdmin");
+		String passwordNew= params.get("passwordNew");
+
+		// Check admin user
+		User admin = this.login(usernameAdmin, passwordAdmin);
+		
+		if(admin == null)
+			throw new Exception("Admin password not valid");
+		if (!admin.hasRole("ADMIN"))
+			throw new Exception("User is not admin");
+		
+		return this.updatePassword(id_user, passwordNew);
+	}
+	
+
+	// UTILS FUNCTION
+
+	public boolean updatePassword(Long id_user, String password) {
+		String sql = "UPDATE `user` SET `password` = :password WHERE `_id`=:id";
+		SqlParameterSource parameters = new MapSqlParameterSource()
+			.addValue("id", id_user)
+			.addValue("password", password);
+		Integer rowNum = jdbcTemplate.update(sql, parameters);
+		return rowNum != null && rowNum > 0;
+	}
+	
+    public User addRoles(User user) {
+	    ArrayList<String> roles = rolesService.getRolesAsStringArray(user.get_id());
+	    user.setRoles(roles);
+	    return user;
+	}
+
+	public void updateRoles(Long id_user, ArrayList<String> roles) {
+
+		// Delete not in array
+	    rolesService.deleteNotInArray(id_user, roles);
+		
+		// Get actual    		
+	    List<String> actual = rolesService.getRolesAsStringArray(id_user);
+	    
+		// Insert new
+		for (String role : roles) {
+			if (actual.indexOf(role) == -1){
+				rolesService.insert(id_user, role);
+			}
+		}
+		
+	}
+    {{/equal}}
+
+}
